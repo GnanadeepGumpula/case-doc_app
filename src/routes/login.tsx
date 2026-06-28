@@ -13,6 +13,7 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Tooltip helper states
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
@@ -26,13 +27,16 @@ function LoginPage() {
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(false);
     setFormError(null);
 
     if (!email || !password) {
       setFormError("All authentication fields are strictly mandatory.");
       toast.error("Authentication failed: Missing inputs.");
       return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("bestcase.remember-me", rememberMe ? "1" : "0");
     }
 
     setIsLoading(true);
@@ -100,9 +104,6 @@ function LoginPage() {
           <h2 className="text-2xl font-bold tracking-tight text-brand">
             {isSignUp ? "Register Master Account" : "Clinical Matrix Sign-In"}
           </h2>
-          <p className="text-xs font-medium text-muted-foreground mt-1">
-            System Platform & Design • Developed by Gnanadeep Gumpula
-          </p>
         </div>
 
         {/* Dynamic Context Pop-up Error Alerts */}
@@ -117,7 +118,7 @@ function LoginPage() {
           {/* Email Input Wrapper */}
           <div className="relative">
             <div className="flex items-center justify-between mb-1">
-              <label className="bc-label mb-0">Corporate Email ID</label>
+              <label className="bc-label mb-0">Email ID</label>
               <button
                 type="button"
                 onClick={() => toggleTooltip("email")}
@@ -148,7 +149,7 @@ function LoginPage() {
           {/* Password Input Wrapper */}
           <div className="relative">
             <div className="flex items-center justify-between mb-1">
-              <label className="bc-label mb-0">Security Cryptic Key</label>
+              <label className="bc-label mb-0">Password</label>
               <button
                 type="button"
                 onClick={() => toggleTooltip("password")}
@@ -174,6 +175,15 @@ function LoginPage() {
               required
             />
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            Keep me signed in on this device
+          </label>
 
           <button
             type="submit"

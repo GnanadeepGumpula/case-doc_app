@@ -16,10 +16,17 @@ function monthKey(dateStr: string) {
 function Reports() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   useEffect(() => {
-    const sync = () => setCases(loadCases());
+    let active = true;
+    const sync = async () => {
+      const list = await loadCases();
+      if (active) setCases(list);
+    };
     sync();
     window.addEventListener("bestcase:changed", sync);
-    return () => window.removeEventListener("bestcase:changed", sync);
+    return () => {
+      active = false;
+      window.removeEventListener("bestcase:changed", sync);
+    };
   }, []);
 
   const months = useMemo(() => {

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { deleteCase, loadCases, type CaseRecord } from "@/lib/cases";
+import { checkCaseLimit, deleteCase, loadCases, type CaseRecord } from "@/lib/cases";
 import { exportCasesToExcel } from "@/lib/case-excel";
 
 export const Route = createFileRoute("/_app/cases/")({
@@ -11,12 +11,25 @@ export const Route = createFileRoute("/_app/cases/")({
 function CasesList() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [q, setQ] = useState("");
+  const [limitState, setLimitState] = useState({ count: 0, reached: false, limit: 24 });
 
   useEffect(() => {
-    const sync = () => setCases(loadCases());
+    let active = true;
+    const sync = async () => {
+      const list = await loadCases();
+      const status = await checkCaseLimit();
+      if (active) {
+        setCases(list);
+        setLimitState(status);
+      }
+    };
+
     sync();
     window.addEventListener("bestcase:changed", sync);
-    return () => window.removeEventListener("bestcase:changed", sync);
+    return () => {
+      active = false;
+      window.removeEventListener("bestcase:changed", sync);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -38,20 +51,27 @@ function CasesList() {
           <p className="text-sm text-muted-foreground">
             {cases.length} total · {filtered.length} shown
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Storage: {limitState.count}/{limitState.limit} cases used {limitState.reached ? "(limit reached)" : ""}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             className="bc-btn-outline"
-            onClick={() =>
-              exportCasesToExcel(filtered, `cases-${new Date().toISOString().slice(0, 10)}.xlsx`)
-            }
+            onClick={() => exportCasesToExcel(filtered, `cases-${new Date().toISOString().slice(0, 10)}.xlsx`)}
             disabled={!filtered.length}
           >
             Export Excel
           </button>
-          <Link to="/cases/new" className="bc-btn-primary">
-            + New Case
-          </Link>
+          {limitState.reached ? (
+            <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              Delete old cases to create more.
+            </div>
+          ) : (
+            <Link to="/cases/new" className="bc-btn-primary">
+              + New Case
+            </Link>
+          )}
         </div>
       </div>
 
@@ -82,7 +102,7 @@ function CasesList() {
           </div>
           <h2 className="text-lg font-semibold text-foreground">No cases yet</h2>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Document your first emergency response. Cases are saved on this device.
+            Document your first emergency response. Cases are saved securely to your account.
           </p>
           <Link to="/cases/new" className="bc-btn-primary mt-5">
             Create a case
@@ -98,12 +118,8 @@ function CasesList() {
               <Link to="/cases/$id" params={{ id: c.id }} className="block p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      #{c.caseId || "—"}
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-foreground">
-                      {c.emergencyType || "Untitled"}
-                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">#{c.caseId || "—"}</div>
+                    <div className="mt-1 text-sm font-semibold text-foreground">{c.emergencyType || "Untitled"}</div>
                     {c.subType && <div className="text-xs text-muted-foreground">{c.subType}</div>}
                   </div>
                   <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent-foreground">
@@ -118,12 +134,10 @@ function CasesList() {
                 </div>
               </Link>
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.preventDefault();
-                  if (
-                    confirm(`Delete case ${c.caseId || c.id.slice(0, 6)}? This cannot be undone.`)
-                  ) {
-                    deleteCase(c.id);
+                  if (confirm(`Delete case ${c.caseId || c.id.slice(0, 6)}? This cannot be undone.`)) {
+                    await deleteCase(c.id);
                   }
                 }}
                 className="absolute right-2 top-2 rounded-md p-1.5 text-muted-foreground opacity-0 transition hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"

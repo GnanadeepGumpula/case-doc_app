@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { CaseRecord } from "@/lib/cases";
+import { uploadCaseImageFiles } from "@/lib/supabase";
 
 interface Props {
   initial: CaseRecord;
-  onSubmit: (c: CaseRecord) => void;
+  onSubmit: (c: CaseRecord) => void | Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
 }
@@ -20,27 +21,51 @@ const EMERGENCY_TYPES = [
   "Other",
 ];
 
+const MAX_IMAGE_SIZE = 1024 * 1024;
+
 export function CaseForm({ initial, onSubmit, onCancel, submitLabel = "Save" }: Props) {
   const [c, setC] = useState<CaseRecord>(initial);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof CaseRecord>(k: K, v: CaseRecord[K]) =>
     setC((prev) => ({ ...prev, [k]: v }));
 
-  function handlePhoto(file?: File) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => set("photo", reader.result as string);
-    reader.readAsDataURL(file);
+  async function handlePhotos(files: FileList | null) {
+    if (!files?.length) return;
+
+    const selected = Array.from(files).filter((file) => file.type.startsWith("image/"));
+    const oversized = selected.filter((file) => file.size > MAX_IMAGE_SIZE);
+    if (oversized.length) {
+      setUploadError(`Each image must be 1 MB or smaller. ${oversized.length} file(s) were skipped.`);
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const uploadedUrls = await uploadCaseImageFiles(selected);
+      const mergedPhotos = [...(c.photos ?? []), ...uploadedUrls];
+      setC((prev) => ({
+        ...prev,
+        photos: mergedPhotos,
+        photo: mergedPhotos[0] ?? undefined,
+      }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Image upload failed.");
+    } finally {
+      setIsUploading(false);
+    }
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
     if (!c.caseId.trim()) {
       alert("Case ID is required.");
       return;
     }
-    onSubmit(c);
+    await onSubmit(c);
   }
 
   return (
@@ -174,86 +199,63 @@ export function CaseForm({ initial, onSubmit, onCancel, submitLabel = "Save" }: 
       <Section title="Case Details">
         <div className="space-y-4">
           <Field label="Mechanism of Injury / Nature of Illness">
-            <textarea
-              rows={3}
-              className="bc-input"
-              value={c.mechanism}
-              onChange={(e) => set("mechanism", e.target.value)}
-            />
+            <textarea rows={3} className="bc-input" value={c.mechanism} onChange={(e) => set("mechanism", e.target.value)} />
           </Field>
           <Field label="Scene Description">
-            <textarea
-              rows={3}
-              className="bc-input"
-              value={c.sceneDescription}
-              onChange={(e) => set("sceneDescription", e.target.value)}
-            />
+            <textarea rows={3} className="bc-input" value={c.sceneDescription} onChange={(e) => set("sceneDescription", e.target.value)} />
           </Field>
           <Field label="During Transport">
-            <textarea
-              rows={3}
-              className="bc-input"
-              value={c.duringTransport}
-              onChange={(e) => set("duringTransport", e.target.value)}
-            />
+            <textarea rows={3} className="bc-input" value={c.duringTransport} onChange={(e) => set("duringTransport", e.target.value)} />
           </Field>
           <Field label="Hospital Handover">
-            <textarea
-              rows={3}
-              className="bc-input"
-              value={c.hospitalHandover}
-              onChange={(e) => set("hospitalHandover", e.target.value)}
-            />
+            <textarea rows={3} className="bc-input" value={c.hospitalHandover} onChange={(e) => set("hospitalHandover", e.target.value)} />
           </Field>
           <Field label="Outcome">
-            <textarea
-              rows={2}
-              className="bc-input"
-              value={c.outcome}
-              onChange={(e) => set("outcome", e.target.value)}
-            />
+            <textarea rows={2} className="bc-input" value={c.outcome} onChange={(e) => set("outcome", e.target.value)} />
           </Field>
         </div>
       </Section>
 
-      <Section title="Photo (Optional)">
-        <div className="flex items-start gap-4">
-          {c.photo ? (
-            <div className="relative">
-              <img
-                src={c.photo}
-                alt="Case"
-                className="h-32 w-32 rounded-lg border border-border object-cover"
-              />
-              <button
-                type="button"
-                onClick={() => set("photo", undefined)}
-                className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground shadow"
-                aria-label="Remove photo"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  className="h-3.5 w-3.5"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ) : (
+      <Section title="Photos (Optional)">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-start gap-4">
+            {c.photos?.length ? (
+              c.photos.map((photo, index) => (
+                <div key={`${photo}-${index}`} className="relative">
+                  <img src={photo} alt={`Case photo ${index + 1}`} className="h-24 w-24 rounded-lg border border-border object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = (c.photos ?? []).filter((item) => item !== photo);
+                      setC((prev) => ({ ...prev, photos: next, photo: next[0] ?? undefined }));
+                    }}
+                    className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground shadow"
+                    aria-label="Remove photo"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      className="h-3.5 w-3.5"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))
+            ) : null}
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex h-32 w-32 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-xs text-muted-foreground transition hover:border-primary hover:text-primary"
+              className="flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-border text-[11px] text-muted-foreground transition hover:border-primary hover:text-primary"
             >
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
-                className="h-6 w-6"
+                className="h-5 w-5"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
@@ -261,20 +263,23 @@ export function CaseForm({ initial, onSubmit, onCancel, submitLabel = "Save" }: 
               >
                 <path d="M12 5v14M5 12h14" />
               </svg>
-              Add Photo
+              Add
             </button>
-          )}
+          </div>
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
             capture="environment"
+            multiple
             className="hidden"
-            onChange={(e) => handlePhoto(e.target.files?.[0])}
+            onChange={(e) => handlePhotos(e.target.files)}
           />
-          <p className="max-w-xs text-xs text-muted-foreground">
-            Stored locally and embedded in the case PDF. Keep images small for best performance.
-          </p>
+          <div className="text-xs text-muted-foreground">
+            <p>Upload multiple images, up to 1 MB each. Photos are stored securely in your account.</p>
+            {isUploading && <p className="mt-1 text-primary">Uploading image(s)...</p>}
+            {uploadError && <p className="mt-1 text-destructive">{uploadError}</p>}
+          </div>
         </div>
       </Section>
 
@@ -284,7 +289,7 @@ export function CaseForm({ initial, onSubmit, onCancel, submitLabel = "Save" }: 
             Cancel
           </button>
         )}
-        <button type="submit" className="bc-btn-primary">
+        <button type="submit" className="bc-btn-primary" disabled={isUploading}>
           {submitLabel}
         </button>
       </div>
@@ -292,7 +297,7 @@ export function CaseForm({ initial, onSubmit, onCancel, submitLabel = "Save" }: 
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="bc-card p-5">
       <h2 className="bc-section-title">{title}</h2>
@@ -300,22 +305,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   );
 }
-function Grid({ cols, children }: { cols: 2 | 3; children: React.ReactNode }) {
-  return (
-    <div className={`grid gap-4 ${cols === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-      {children}
-    </div>
-  );
+function Grid({ cols, children }: { cols: 2 | 3; children: ReactNode }) {
+  return <div className={`grid gap-4 ${cols === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>{children}</div>;
 }
-function Field({
-  label,
-  required,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
+function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <label className="block">
       <span className="bc-label">

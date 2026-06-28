@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 export interface CaseRecord {
   id: string; // internal uuid
   date: string;
@@ -17,43 +19,125 @@ export interface CaseRecord {
   duringTransport: string;
   hospitalHandover: string;
   outcome: string;
-  photo?: string; // base64 data URL
+  photo?: string;
+  photos?: string[];
   createdAt: number;
   updatedAt: number;
 }
 
-const KEY = "bestcase.cases.v1";
+export const CASE_LIMIT = 24;
 
-export function loadCases(): CaseRecord[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as CaseRecord[];
-  } catch {
-    return [];
+function normalizeCase(c: CaseRecord): CaseRecord {
+  const photos = c.photos?.filter(Boolean) ?? [];
+  const primaryPhoto = c.photo ?? photos[0];
+  return {
+    ...c,
+    id: c.id || crypto.randomUUID(),
+    photos,
+    photo: primaryPhoto,
+    createdAt: c.createdAt || Date.now(),
+    updatedAt: c.updatedAt || Date.now(),
+  };
+}
+
+function mapCaseRow(row: { id?: string; payload?: Partial<CaseRecord> } | null | undefined): CaseRecord {
+  const payload = (row?.payload ?? {}) as Partial<CaseRecord>;
+  return normalizeCase({ ...(payload as CaseRecord), id: row?.id ?? payload.id ?? crypto.randomUUID() });
+}
+
+async function getCurrentUserId() {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
+export async function loadCases(): Promise<CaseRecord[]> {
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from("cases")
+    .select("id,payload")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []).map((row) => mapCaseRow(row as { id?: string; payload?: Partial<CaseRecord> }));
+}
+
+export async function saveCases(list: CaseRecord[]) {
+  await Promise.all(list.map((item) => upsertCase(item)));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("bestcase:changed"));
   }
 }
 
-export function saveCases(list: CaseRecord[]) {
-  localStorage.setItem(KEY, JSON.stringify(list));
-  window.dispatchEvent(new Event("bestcase:changed"));
+export async function upsertCase(c: CaseRecord): Promise<CaseRecord> {
+  const normalized = normalizeCase(c);
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Please sign in to save case data.");
+
+  const { data, error } = await supabase
+    .from("cases")
+    .upsert(
+      {
+        id: normalized.id,
+        user_id: userId,
+        payload: normalized,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    )
+    .select("id,payload")
+    .single();
+
+  if (error) throw error;
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("bestcase:changed"));
+  }
+
+  return mapCaseRow(data as { id?: string; payload?: Partial<CaseRecord> });
 }
 
-export function upsertCase(c: CaseRecord) {
-  const all = loadCases();
-  const idx = all.findIndex((x) => x.id === c.id);
-  if (idx >= 0) all[idx] = c;
-  else all.unshift(c);
-  saveCases(all);
+export async function deleteCase(id: string) {
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
+  const { error } = await supabase.from("cases").delete().eq("id", id).eq("user_id", userId);
+  if (error) throw error;
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("bestcase:changed"));
+  }
 }
 
-export function deleteCase(id: string) {
-  saveCases(loadCases().filter((c) => c.id !== id));
+export async function getCase(id: string): Promise<CaseRecord | undefined> {
+  const userId = await getCurrentUserId();
+  if (!userId) return undefined;
+
+  const { data, error } = await supabase.from("cases").select("id,payload").eq("id", id).eq("user_id", userId).single();
+  if (error) {
+    if ((error as { code?: string }).code === "PGRST116") return undefined;
+    throw error;
+  }
+
+  return mapCaseRow(data as { id?: string; payload?: Partial<CaseRecord> });
 }
 
-export function getCase(id: string): CaseRecord | undefined {
-  return loadCases().find((c) => c.id === id);
+export async function getCaseCount(): Promise<number> {
+  const userId = await getCurrentUserId();
+  if (!userId) return 0;
+
+  const { count, error } = await supabase.from("cases").select("id", { count: "exact", head: true }).eq("user_id", userId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function checkCaseLimit(): Promise<{ count: number; reached: boolean; limit: number }> {
+  const count = await getCaseCount();
+  return { count, reached: count >= CASE_LIMIT, limit: CASE_LIMIT };
 }
 
 export function emptyCase(): CaseRecord {
@@ -78,6 +162,7 @@ export function emptyCase(): CaseRecord {
     duringTransport: "",
     hospitalHandover: "",
     outcome: "",
+    photos: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

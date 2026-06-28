@@ -1,8 +1,8 @@
-import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CaseForm } from "@/components/CaseForm";
 import { getCase, upsertCase, deleteCase, type CaseRecord } from "@/lib/cases";
-import { caseSummaryText, downloadCaseXlsx } from "@/lib/case-xlsx";
+import { downloadCaseXlsx, shareCaseXlsx } from "@/lib/case-xlsx";
 
 export const Route = createFileRoute("/_app/cases/$id")({
   head: () => ({ meta: [{ title: "Case · Best Case Documentation" }] }),
@@ -16,11 +16,15 @@ function CaseDetail() {
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    const c = getCase(id);
-    if (!c) {
-      throw notFound();
-    }
-    setRecord(c);
+    let active = true;
+    const load = async () => {
+      const c = await getCase(id);
+      if (active) setRecord(c ?? null);
+    };
+    load();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   if (!record) return null;
@@ -34,8 +38,8 @@ function CaseDetail() {
         </div>
         <CaseForm
           initial={record}
-          onSubmit={(c) => {
-            upsertCase({ ...c, updatedAt: Date.now() });
+          onSubmit={async (c) => {
+            await upsertCase({ ...c, updatedAt: Date.now() });
             setRecord(c);
             setEditing(false);
           }}
@@ -46,14 +50,11 @@ function CaseDetail() {
     );
   }
 
-  const shareWhatsApp = () => {
-    const text = encodeURIComponent(caseSummaryText(record));
-    window.open(`https://wa.me/?text=${text}`, "_blank");
+  const shareWhatsApp = async () => {
+    await shareCaseXlsx(record, "whatsapp");
   };
-  const shareEmail = () => {
-    const subject = encodeURIComponent(`Case Report ${record.caseId || ""}`);
-    const body = encodeURIComponent(caseSummaryText(record));
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  const shareEmail = async () => {
+    await shareCaseXlsx(record, "email");
   };
 
   return (
@@ -73,9 +74,9 @@ function CaseDetail() {
           <button className="bc-btn-outline" onClick={shareEmail}>Email</button>
           <button
             className="bc-btn-danger"
-            onClick={() => {
+            onClick={async () => {
               if (confirm("Delete this case? This cannot be undone.")) {
-                deleteCase(record.id);
+                await deleteCase(record.id);
                 router.navigate({ to: "/cases" });
               }
             }}
@@ -109,12 +110,19 @@ function CaseDetail() {
           </Section>
         </div>
         <aside className="space-y-4">
-          {record.photo && (
+          {record.photos?.length ? (
+            <div className="bc-card overflow-hidden p-3 space-y-3">
+              {record.photos.map((photo, index) => (
+                <img key={`${photo}-${index}`} src={photo} alt={`Case photo ${index + 1}`} className="block w-full rounded-md object-cover" />
+              ))}
+              <div className="border-t border-border pt-3 text-xs text-muted-foreground">Attached photos</div>
+            </div>
+          ) : record.photo ? (
             <div className="bc-card overflow-hidden">
               <img src={record.photo} alt="Case photo" className="block w-full object-cover" />
               <div className="border-t border-border p-3 text-xs text-muted-foreground">Attached photo</div>
             </div>
-          )}
+          ) : null}
           <div className="bc-card p-4 text-xs text-muted-foreground space-y-2">
             <div><span className="font-medium text-foreground">Created:</span> {new Date(record.createdAt).toLocaleString()}</div>
             <div><span className="font-medium text-foreground">Updated:</span> {new Date(record.updatedAt).toLocaleString()}</div>

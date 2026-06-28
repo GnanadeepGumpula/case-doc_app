@@ -20,6 +20,7 @@ export function exportCasesToExcel(cases: CaseRecord[], filename = "cases.xlsx")
     "During Transport": c.duringTransport,
     "Hospital Handover": c.hospitalHandover,
     Outcome: c.outcome,
+    Photos: (c.photos?.length ?? 0) + (c.photo ? 1 : 0),
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();

@@ -1,6 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { CaseForm } from "@/components/CaseForm";
-import { emptyCase, upsertCase, type CaseRecord } from "@/lib/cases";
+import { checkCaseLimit, emptyCase, upsertCase, type CaseRecord } from "@/lib/cases";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/cases/new")({
   head: () => ({ meta: [{ title: "New Case · Best Case Documentation" }] }),
@@ -18,8 +19,13 @@ function NewCase() {
       </div>
       <CaseForm
         initial={initial}
-        onSubmit={(c: CaseRecord) => {
-          upsertCase({ ...c, updatedAt: Date.now() });
+        onSubmit={async (c: CaseRecord) => {
+          const { reached } = await checkCaseLimit();
+          if (reached) {
+            toast.error("You have reached the 24-case limit. Delete older cases or upgrade to continue.");
+            return;
+          }
+          await upsertCase({ ...c, updatedAt: Date.now() });
           router.navigate({ to: "/cases/$id", params: { id: c.id } });
         }}
         onCancel={() => router.navigate({ to: "/cases" })}

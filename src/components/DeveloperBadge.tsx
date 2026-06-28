@@ -1,18 +1,37 @@
 import React from "react";
 
 const DeveloperBadge: React.FC = () => {
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    const stored = window.localStorage.getItem("developer-badge-dismissed");
+    setDismissed(stored === "1");
+  }, []);
+
+  const handleDismiss = () => {
+    window.localStorage.setItem("developer-badge-dismissed", "1");
+    setDismissed(true);
+  };
+
+  if (dismissed) return null;
+
   return (
-    <a
-      href="https://gnanadeepstudio.vercel.app"
-      target="_blank"
-      rel="noopener noreferrer"
-      style={styles.badge}
-    >
-      <div style={styles.profilePicContainer}>
-        <img src="/gnanadeep.jpeg" alt="Gnanadeep Gumpula" style={styles.profilePic} />
-      </div>
-      <span style={styles.text}>Developed by Gnanadeep Gumpula</span>
-    </a>
+    <div style={styles.badge}>
+      <a
+        href="https://gnanadeepstudio.vercel.app"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={styles.link}
+      >
+        <div style={styles.profilePicContainer}>
+          <img src="/gnanadeep.jpeg" alt="Gnanadeep Gumpula" style={styles.profilePic} />
+        </div>
+        <span style={styles.text}>Developed by Gnanadeep Gumpula</span>
+      </a>
+      <button type="button" onClick={handleDismiss} style={styles.dismiss} aria-label="Dismiss developer badge">
+        ×
+      </button>
+    </div>
   );
 };
 
@@ -23,19 +42,25 @@ const styles: { [key: string]: React.CSSProperties } = {
     right: "20px",
     display: "flex",
     alignItems: "center",
-    gap: "10px",
+    gap: "8px",
     backgroundColor: "#ffffff",
     color: "#1a1a1a",
-    padding: "8px 14px 8px 8px",
+    padding: "8px 10px 8px 8px",
     borderRadius: "30px",
     boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     fontSize: "13px",
     fontWeight: 500,
-    textDecoration: "none",
     zIndex: 9999,
     transition: "transform 0.2s ease, box-shadow 0.2s ease",
     border: "1px solid rgba(0, 0, 0, 0.05)",
+  },
+  link: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    textDecoration: "none",
+    color: "inherit",
   },
   profilePicContainer: {
     width: "28px",
@@ -54,6 +79,15 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   text: {
     whiteSpace: "nowrap",
+  },
+  dismiss: {
+    border: "none",
+    background: "transparent",
+    color: "#666",
+    cursor: "pointer",
+    fontSize: "16px",
+    lineHeight: 1,
+    padding: 0,
   },
 };
 

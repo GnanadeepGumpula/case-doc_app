@@ -66,11 +66,9 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
     views: [{ showGridLines: false }],
   });
 
-  // Column widths — A wide label, B-K body
   ws.getColumn(1).width = 35;
   for (let i = 2; i <= 11; i++) ws.getColumn(i).width = 12;
 
-  // Row 1: Title
   setMerged(ws, "A1:K1", "BEST CASE DOCUMENTATION FORMAT", {
     bold: true,
     size: 18,
@@ -80,7 +78,6 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   });
   ws.getRow(1).height = 32;
 
-  // Rows 2-11: case info (label in A, value merged B:K)
   const info: [string, string | Date | number][] = [
     ["Date:", c.date],
     ["Case id:", c.caseId],
@@ -100,7 +97,6 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
     ws.getRow(r).height = 20;
   });
 
-  // Row 13: section header
   setMerged(ws, "A13:K13", "Complete case details", {
     bold: true,
     size: 18,
@@ -110,7 +106,6 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   });
   ws.getRow(13).height = 30;
 
-  // Helper for big section blocks (label cell merged vertically, value merged big block)
   const block = (startRow: number, endRow: number, label: string, value: string, labelSize = 20, valueSize = 14) => {
     setMerged(ws, `A${startRow}:A${endRow}`, label, {
       bold: true,
@@ -134,12 +129,11 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   block(33, 42, "On the way to Hospital", c.duringTransport);
   block(44, 53, "Hospital Admission", c.hospitalHandover);
 
-  // Rows 54-76: photo or outcome placeholder block
-  if (c.photo) {
-    // Embed image
+  const firstPhoto = c.photos?.[0] ?? c.photo;
+  if (firstPhoto) {
     try {
-      const base64 = c.photo.includes(",") ? c.photo.split(",")[1] : c.photo;
-      const ext = c.photo.startsWith("data:image/png") ? "png" : "jpeg";
+      const base64 = firstPhoto.includes(",") ? firstPhoto.split(",")[1] : firstPhoto;
+      const ext = firstPhoto.startsWith("data:image/png") ? "png" : "jpeg";
       const imgId = wb.addImage({ base64, extension: ext });
       ws.mergeCells("A54:K76");
       ws.addImage(imgId, {
@@ -147,7 +141,6 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
         br: { col: 11, row: 76 } as unknown as ExcelJS.Anchor,
         editAs: "oneCell",
       });
-      // Apply border to merged
       const cell = ws.getCell("A54");
       cell.border = border();
     } catch {
@@ -165,7 +158,6 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   }
   for (let r = 54; r <= 76; r++) ws.getRow(r).height = 18;
 
-  // Outcome row at 78
   setMerged(ws, "A78:K78", "Outcome", {
     bold: true,
     size: 16,
@@ -200,6 +192,17 @@ export async function downloadCaseXlsx(c: CaseRecord) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function shareCaseXlsx(c: CaseRecord, target: "whatsapp" | "email") {
+  await downloadCaseXlsx(c);
+  const subject = encodeURIComponent(`Case Report ${c.caseId || ""}`);
+  const body = encodeURIComponent(caseSummaryText(c));
+  if (target === "whatsapp") {
+    window.open(`https://wa.me/?text=${encodeURIComponent(`Case report ready: ${caseSummaryText(c)}`)}`, "_blank", "noopener,noreferrer");
+  } else {
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  }
 }
 
 export function caseSummaryText(c: CaseRecord): string {
