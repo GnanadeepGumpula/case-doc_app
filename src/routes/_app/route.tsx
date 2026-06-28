@@ -6,9 +6,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) {
       throw redirect({ to: "/login" });
     }
   },
@@ -30,10 +30,7 @@ function AppLayoutComponent() {
           <img src="/logo.png" alt="System Logo" className="h-9 w-9 object-contain" />
           <div>
             <span className="text-sm font-bold tracking-tight text-brand block leading-none">
-              Matrix Analytics
-            </span>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest mt-0.5 block">
-              Admin Layer • Gnanadeep Gumpula
+              Best Case Documentation
             </span>
           </div>
         </div>
@@ -70,17 +67,6 @@ function AppLayoutComponent() {
       <main className="flex-1 w-full max-w-7xl mx-auto p-6 md:p-8 animate-in fade-in duration-300">
         <Outlet />
       </main>
-
-      {/* Enterprise Signature Footer */}
-      <footer className="w-full border-t border-border/40 bg-card/40 py-4 px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="Footer Logo" className="h-4 w-4 object-contain opacity-50" />
-          <span>© 2026 Sovereign Systems. All data records encrypted via Supabase Cluster.</span>
-        </div>
-        <div className="font-semibold text-brand tracking-wide mt-2 sm:mt-0">
-          Developed by Gnanadeep Gumpula
-        </div>
-      </footer>
     </div>
   );
 }

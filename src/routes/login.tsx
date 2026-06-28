@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   // Tooltip helper states
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
@@ -21,9 +22,43 @@ function LoginPage() {
 
   const navigate = useNavigate();
 
+  useEffect(() => {
+    setMounted(true);
+
+    let active = true;
+    const restoreSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (active && session) {
+        navigate({ to: "/cases" });
+      }
+    };
+    restoreSession();
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
   const toggleTooltip = (field: string) => {
     setActiveTooltip(activeTooltip === field ? null : field);
   };
+
+  if (!mounted) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center bg-radial from-background to-secondary/30 px-4">
+        <div className="bc-card w-full max-w-md p-8 border border-border/60 bg-card/80 backdrop-blur-md shadow-2xl relative overflow-hidden transition-all duration-300">
+          <div className="space-y-4 animate-pulse">
+            <div className="mx-auto h-16 w-16 rounded-full bg-secondary" />
+            <div className="h-6 w-3/4 rounded bg-secondary mx-auto" />
+            <div className="h-10 w-full rounded bg-secondary" />
+            <div className="h-10 w-full rounded bg-secondary" />
+            <div className="h-10 w-full rounded bg-secondary" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +79,7 @@ function LoginPage() {
     try {
       if (isSignUp) {
         // Direct Signup - Table Row generation without confirmation blocking
-        const { data, error } = await supabase.auth.signUp({
+        const { error } = await supabase.auth.signUp({
           email: email,
           password: password,
         });
@@ -63,7 +98,7 @@ function LoginPage() {
         navigate({ to: "/cases" });
       } else {
         // Explicit credential verification against live table rows
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email: email,
           password: password,
         });

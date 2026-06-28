@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { CaseForm } from "@/components/CaseForm";
 import { getCase, upsertCase, deleteCase, type CaseRecord } from "@/lib/cases";
 import { downloadCaseXlsx, shareCaseXlsx } from "@/lib/case-xlsx";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/cases/$id")({
   head: () => ({ meta: [{ title: "Case · Best Case Documentation" }] }),
@@ -39,9 +40,14 @@ function CaseDetail() {
         <CaseForm
           initial={record}
           onSubmit={async (c) => {
-            await upsertCase({ ...c, updatedAt: Date.now() });
-            setRecord(c);
-            setEditing(false);
+            try {
+              const saved = await upsertCase({ ...c, id: c.id || crypto.randomUUID(), updatedAt: Date.now() });
+              setRecord(saved);
+              setEditing(false);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unable to save case.";
+              toast.error(message);
+            }
           }}
           onCancel={() => setEditing(false)}
           submitLabel="Save Changes"

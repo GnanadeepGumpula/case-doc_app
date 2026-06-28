@@ -47,8 +47,36 @@ function mapCaseRow(row: { id?: string; payload?: Partial<CaseRecord> } | null |
 
 async function getCurrentUserId() {
   const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) throw sessionError;
+  if (session?.user?.id) return session.user.id;
+
+  try {
+    const {
+      data: { session: refreshedSession },
+      error: refreshError,
+    } = await supabase.auth.refreshSession();
+
+    if (!refreshError && refreshedSession?.user?.id) {
+      return refreshedSession.user.id;
+    }
+  } catch {
+    // Fall back to a direct user lookup below.
+  }
+
+  const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
+
+  if (userError) {
+    if (userError.message?.includes("Auth session missing")) return null;
+    throw userError;
+  }
+
   return user?.id ?? null;
 }
 
@@ -92,7 +120,10 @@ export async function upsertCase(c: CaseRecord): Promise<CaseRecord> {
     .select("id,payload")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Supabase case save failed", error);
+    throw new Error(error.message || "Unable to save case. Check your connection and sign-in status.");
+  }
 
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("bestcase:changed"));
@@ -141,13 +172,11 @@ export async function checkCaseLimit(): Promise<{ count: number; reached: boolea
 }
 
 export function emptyCase(): CaseRecord {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
   return {
-    id: crypto.randomUUID(),
-    date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    id: "",
+    date: "",
     caseId: "",
-    callTime: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+    callTime: "",
     emergencyType: "",
     subType: "",
     district: "",
@@ -163,7 +192,7 @@ export function emptyCase(): CaseRecord {
     hospitalHandover: "",
     outcome: "",
     photos: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: 0,
+    updatedAt: 0,
   };
 }

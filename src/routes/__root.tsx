@@ -1,4 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import "../styles.css";
 import DeveloperBadge from "../components/DeveloperBadge";
 
@@ -26,10 +27,24 @@ function RootComponent() {
         className="bg-background text-foreground antialiased selection:bg-primary/20"
         suppressHydrationWarning
       >
-        <Outlet />
-        <DeveloperBadge />
+        <ClientOnly>
+          <Outlet />
+          <DeveloperBadge />
+        </ClientOnly>
         <Scripts />
       </body>
     </html>
   );
+}
+
+function ClientOnly({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
+  return <>{children}</>;
 }

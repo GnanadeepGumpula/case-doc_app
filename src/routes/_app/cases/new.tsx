@@ -25,8 +25,14 @@ function NewCase() {
             toast.error("You have reached the 24-case limit. Delete older cases or upgrade to continue.");
             return;
           }
-          await upsertCase({ ...c, updatedAt: Date.now() });
-          router.navigate({ to: "/cases/$id", params: { id: c.id } });
+          try {
+            const saved = await upsertCase({ ...c, id: c.id || crypto.randomUUID(), updatedAt: Date.now() });
+            toast.success("Case saved successfully.");
+            router.navigate({ to: "/cases/$id", params: { id: saved.id } });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Unable to save case.";
+            toast.error(message);
+          }
         }}
         onCancel={() => router.navigate({ to: "/cases" })}
         submitLabel="Save Case"

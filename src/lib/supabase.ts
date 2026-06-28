@@ -11,21 +11,52 @@ if (typeof window !== "undefined" && (!supabaseUrl || !supabaseAnonKey)) {
   );
 }
 
-function getDefaultAuthStorage() {
+const globalScope = globalThis as typeof globalThis & {
+  __bestcaseSupabaseClient?: ReturnType<typeof createClient>;
+};
+
+function getPreferredStorage(): Storage | undefined {
   if (typeof window === "undefined") return undefined;
   const rememberMe = window.localStorage.getItem("bestcase.remember-me");
   return rememberMe === "0" ? window.sessionStorage : window.localStorage;
 }
 
-// Fall back to a structural string to satisfy the compiler without generating broken requests
-export const supabase = createClient(supabaseUrl || "https://your-project-id.supabase.co", supabaseAnonKey || "placeholder", {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: getDefaultAuthStorage(),
+const authStorage: Storage = {
+  get length() {
+    return getPreferredStorage()?.length ?? 0;
   },
-});
+  clear() {
+    getPreferredStorage()?.clear();
+  },
+  getItem(key: string) {
+    return getPreferredStorage()?.getItem(key) ?? null;
+  },
+  key(index: number) {
+    return getPreferredStorage()?.key(index) ?? null;
+  },
+  removeItem(key: string) {
+    getPreferredStorage()?.removeItem(key);
+  },
+  setItem(key: string, value: string) {
+    getPreferredStorage()?.setItem(key, value);
+  },
+};
+
+// Reuse a single Supabase client instance across renders and hot reloads to avoid duplicate auth clients.
+export const supabase =
+  globalScope.__bestcaseSupabaseClient ??
+  createClient(supabaseUrl || "https://your-project-id.supabase.co", supabaseAnonKey || "placeholder", {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: authStorage,
+    },
+  });
+
+if (typeof window !== "undefined" && !globalScope.__bestcaseSupabaseClient) {
+  globalScope.__bestcaseSupabaseClient = supabase;
+}
 
 export async function uploadAssetToBucket(file: File, folder: string = "cases") {
   if (!supabaseUrl || supabaseUrl.includes("your-project-id")) return null;
