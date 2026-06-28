@@ -1,11 +1,16 @@
 create table if not exists public.cases (
   id text primary key,
   user_id uuid not null,
+  title text not null default 'Untitled case',
   payload jsonb not null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
+alter table public.cases add column if not exists title text;
+alter table public.cases alter column title set default 'Untitled case';
+update public.cases set title = coalesce(nullif(title, ''), 'Untitled case') where title is null or title = '';
+alter table public.cases alter column title set not null;
 alter table public.cases enable row level security;
 
 create policy if not exists "Users can view own cases"

@@ -40,6 +40,14 @@ function normalizeCase(c: CaseRecord): CaseRecord {
   };
 }
 
+function getCaseTitle(c: Partial<CaseRecord>): string {
+  const titleParts = [c.caseId, c.emergencyType, c.subType, c.district]
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .map((value) => value.trim());
+
+  return titleParts.join(" • ") || "Untitled case";
+}
+
 function mapCaseRow(row: { id?: string; payload?: Partial<CaseRecord> } | null | undefined): CaseRecord {
   const payload = (row?.payload ?? {}) as Partial<CaseRecord>;
   return normalizeCase({ ...(payload as CaseRecord), id: row?.id ?? payload.id ?? crypto.randomUUID() });
@@ -112,6 +120,7 @@ export async function upsertCase(c: CaseRecord): Promise<CaseRecord> {
       {
         id: normalized.id,
         user_id: userId,
+        title: getCaseTitle(normalized),
         payload: normalized,
         updated_at: new Date().toISOString(),
       },
