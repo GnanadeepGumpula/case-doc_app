@@ -1,16 +1,77 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import server from '../dist/server/server.js';
 
-function toNodeHeaders(headers) {
-  const entries = [];
-  headers.forEach((value, key) => {
-    entries.push([key, value]);
-  });
-  return Object.fromEntries(entries);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientRoot = path.resolve(__dirname, '../dist/client');
+
+function getContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    '.js': 'application/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.ico': 'image/x-icon',
+    '.webp': 'image/webp',
+    '.txt': 'text/plain; charset=utf-8',
+    '.map': 'application/json; charset=utf-8',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+    '.eot': 'application/vnd.ms-fontobject',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+async function tryServeStatic(pathname) {
+  if (!pathname || pathname === '/') return null;
+  const safePath = pathname.split('?')[0].split('#')[0];
+  const relativePath = safePath.replace(/^\/+/, '');
+  if (!relativePath || relativePath.startsWith('api/')) return null;
+
+  const fullPath = path.resolve(clientRoot, relativePath);
+  if (!fullPath.startsWith(clientRoot)) return null;
+
+  try {
+    const stat = await fs.promises.stat(fullPath);
+    if (!stat.isFile()) return null;
+
+    const fileBuffer = await fs.promises.readFile(fullPath);
+    return {
+      statusCode: 200,
+      headers: {
+        'content-type': getContentType(fullPath),
+        'cache-control': 'public, max-age=31536000, immutable',
+      },
+      body: fileBuffer,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
-  const origin = req.headers.host ? `https://${req.headers.host}` : 'https://localhost';
-  const url = new URL(req.url || '/', origin);
+  const host = req.headers.host || 'localhost';
+  const origin = `https://${host}`;
+  const originalUrlHeader = req.headers['x-vercel-original-url'] || req.headers['x-forwarded-uri'] || req.url || '/';
+  const url = new URL(originalUrlHeader, origin);
+
+  const staticAsset = await tryServeStatic(url.pathname);
+  if (staticAsset) {
+    res.statusCode = staticAsset.statusCode;
+    Object.entries(staticAsset.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
+    });
+    res.end(staticAsset.body);
+    return;
+  }
 
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
