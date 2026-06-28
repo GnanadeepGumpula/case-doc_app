@@ -9,7 +9,7 @@ const DeveloperBadge: React.FC = () => {
       style={styles.badge}
     >
       <div style={styles.profilePicContainer}>
-        <img src="/logo.png" alt="Gnanadeep Gumpula" style={styles.profilePic} />
+        <img src="/gnanadeep.jpeg" alt="Gnanadeep Gumpula" style={styles.profilePic} />
       </div>
       <span style={styles.text}>Developed by Gnanadeep Gumpula</span>
     </a>
