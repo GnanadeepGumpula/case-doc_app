@@ -178,31 +178,71 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   return wb;
 }
 
-export async function downloadCaseXlsx(c: CaseRecord) {
+async function createCaseExcelFile(c: CaseRecord): Promise<File> {
   const wb = await buildWorkbook(c);
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  const url = URL.createObjectURL(blob);
+  const filename = `Case_${c.caseId || c.id.slice(0, 8)}.xlsx`;
+  return new File([blob], filename, { type: blob.type, lastModified: Date.now() });
+}
+
+export async function downloadCaseXlsx(c: CaseRecord) {
+  const file = await createCaseExcelFile(c);
+  const url = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Case_${c.caseId || c.id.slice(0, 8)}.xlsx`;
+  a.download = file.name;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return file.name;
 }
 
 export async function shareCaseXlsx(c: CaseRecord, target: "whatsapp" | "email") {
-  await downloadCaseXlsx(c);
-  const subject = encodeURIComponent(`Case Report ${c.caseId || ""}`);
-  const body = encodeURIComponent(caseSummaryText(c));
+  const file = await createCaseExcelFile(c);
+  const fileUrl = URL.createObjectURL(file);
+  const summary = caseSummaryText(c);
+  const shareTitle = `Case report ${c.caseId || c.id.slice(0, 8)}`;
+  const shareText = `Case report ready:\n\n${summary}`;
+
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    const shareData = {
+      title: shareTitle,
+      text: shareText,
+      files: [file],
+    };
+
+    if (typeof navigator.canShare === "function" && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        URL.revokeObjectURL(fileUrl);
+        return true;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          URL.revokeObjectURL(fileUrl);
+          return false;
+        }
+      }
+    }
+  }
+
+  const encodedSummary = encodeURIComponent(shareText);
   if (target === "whatsapp") {
-    window.open(`https://wa.me/?text=${encodeURIComponent(`Case report ready: ${caseSummaryText(c)}`)}`, "_blank", "noopener,noreferrer");
+    const whatsappUrl = `https://wa.me/?text=${encodedSummary}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
   } else {
+    const subject = encodeURIComponent(`Case Report ${c.caseId || ""}`);
+    const body = encodedSummary;
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   }
+
+  setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+  return false;
 }
 
 export function caseSummaryText(c: CaseRecord): string {
