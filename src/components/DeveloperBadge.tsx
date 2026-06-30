@@ -1,20 +1,14 @@
 import React from "react";
 
 const DeveloperBadge: React.FC = () => {
+  // Just use regular React state. No localStorage, no sessionStorage.
   const [dismissed, setDismissed] = React.useState(false);
 
-  React.useEffect(() => {
-    // Changed localStorage to sessionStorage for temporary session tracking
-    const stored = window.sessionStorage.getItem("developer-badge-dismissed");
-    setDismissed(stored === "1");
-  }, []);
-
   const handleDismiss = () => {
-    // Saves to sessionStorage so it resets on page refresh or tab re-entry
-    window.sessionStorage.setItem("developer-badge-dismissed", "1");
     setDismissed(true);
   };
 
+  // If they clicked cancel, hide it for this specific page view
   if (dismissed) return null;
 
   return (
