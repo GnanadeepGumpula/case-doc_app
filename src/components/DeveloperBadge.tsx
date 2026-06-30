@@ -4,12 +4,14 @@ const DeveloperBadge: React.FC = () => {
   const [dismissed, setDismissed] = React.useState(false);
 
   React.useEffect(() => {
-    const stored = window.localStorage.getItem("developer-badge-dismissed");
+    // Changed localStorage to sessionStorage for temporary session tracking
+    const stored = window.sessionStorage.getItem("developer-badge-dismissed");
     setDismissed(stored === "1");
   }, []);
 
   const handleDismiss = () => {
-    window.localStorage.setItem("developer-badge-dismissed", "1");
+    // Saves to sessionStorage so it resets on page refresh or tab re-entry
+    window.sessionStorage.setItem("developer-badge-dismissed", "1");
     setDismissed(true);
   };
 
