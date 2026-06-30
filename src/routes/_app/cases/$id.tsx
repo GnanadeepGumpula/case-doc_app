@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { MoreHorizontal, Pencil, Share2, Trash2 } from "lucide-react";
 import { CaseForm } from "@/components/CaseForm";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getCase, upsertCase, deleteCase, type CaseRecord } from "@/lib/cases";
 import { downloadCaseXlsx, shareCaseXlsx } from "@/lib/case-xlsx";
 import { toast } from "sonner";
@@ -56,11 +58,23 @@ function CaseDetail() {
     );
   }
 
-  const shareWhatsApp = async () => {
-    await shareCaseXlsx(record, "whatsapp");
+  const handleShare = async () => {
+    try {
+      const shared = await shareCaseXlsx(record);
+      if (!shared) {
+        toast.error("Sharing is not available on this device/browser right now.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to share case.";
+      toast.error(message);
+    }
   };
-  const shareEmail = async () => {
-    await shareCaseXlsx(record, "email");
+
+  const handleDelete = async () => {
+    if (confirm("Delete this case? This cannot be undone.")) {
+      await deleteCase(record.id);
+      router.navigate({ to: "/cases" });
+    }
   };
 
   return (
@@ -73,22 +87,31 @@ function CaseDetail() {
             <span className="font-mono">#{record.caseId || "—"}</span> · {record.date} {record.callTime}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="bc-btn-outline" onClick={() => setEditing(true)}>Edit</button>
-          <button className="bc-btn-brand" onClick={() => downloadCaseXlsx(record)}>Download Excel</button>
-          <button className="bc-btn-outline" onClick={shareWhatsApp}>WhatsApp</button>
-          <button className="bc-btn-outline" onClick={shareEmail}>Email</button>
-          <button
-            className="bc-btn-danger"
-            onClick={async () => {
-              if (confirm("Delete this case? This cannot be undone.")) {
-                await deleteCase(record.id);
-                router.navigate({ to: "/cases" });
-              }
-            }}
-          >
-            Delete
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <button className="bc-btn-brand" onClick={() => downloadCaseXlsx(record)}>
+            Download Excel
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger className="bc-btn-outline inline-flex h-10 w-10 items-center justify-center rounded-full p-0 sm:w-auto sm:px-3 sm:py-2">
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="ml-2 hidden sm:inline">More</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem onClick={() => setEditing(true)}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleShare}>
+                <Share2 className="mr-2 h-4 w-4" />
+                Share
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={handleDelete}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

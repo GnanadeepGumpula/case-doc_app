@@ -5,6 +5,47 @@ const YELLOW = "FFFFFF00";
 const BLUE = "FF46B0E1";
 const BLACK = "FF000000";
 
+async function getEmbeddedImageData(photo?: string) {
+  if (!photo) return null;
+
+  const trimmed = photo.trim();
+  if (!trimmed) return null;
+
+  const dataUrlMatch = trimmed.match(/^data:image\/(png|jpeg|jpg);base64,([\s\S]+)$/i);
+  if (dataUrlMatch?.[2]) {
+    return {
+      base64: dataUrlMatch[2],
+      extension: dataUrlMatch[1].toLowerCase() === "png" ? "png" : "jpeg",
+    } as const;
+  }
+
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("blob:")) {
+    try {
+      const response = await fetch(trimmed);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      if (!blob.type?.startsWith("image/")) return null;
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+
+      return {
+        base64: btoa(binary),
+        extension: blob.type.includes("png") ? "png" : "jpeg",
+      } as const;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function thin(color = "FF999999") {
   return { style: "thin" as const, color: { argb: color } };
 }
@@ -129,55 +170,91 @@ async function buildWorkbook(c: CaseRecord): Promise<ExcelJS.Workbook> {
   block(33, 42, "On the way to Hospital", c.duringTransport);
   block(44, 53, "Hospital Admission", c.hospitalHandover);
 
-  const firstPhoto = c.photos?.[0] ?? c.photo;
-  if (firstPhoto) {
-    try {
-      const base64 = firstPhoto.includes(",") ? firstPhoto.split(",")[1] : firstPhoto;
-      const ext = firstPhoto.startsWith("data:image/png") ? "png" : "jpeg";
-      const imgId = wb.addImage({ base64, extension: ext });
-      ws.mergeCells("A54:K76");
-      ws.addImage(imgId, {
-        tl: { col: 0.2, row: 53.2 } as unknown as ExcelJS.Anchor,
-        br: { col: 11, row: 76 } as unknown as ExcelJS.Anchor,
-        editAs: "oneCell",
-      });
-      const cell = ws.getCell("A54");
-      cell.border = border();
-    } catch {
-      setMerged(ws, "A54:K76", "[Photo could not be embedded]", {
-        align: "center",
-        vAlign: "middle",
-      });
+  // --- MULTI-IMAGE INJECTION ENGINE ---
+  const allPhotos: string[] = [];
+  if (Array.isArray(c.photos)) {
+    c.photos.forEach((p) => {
+      if (p) allPhotos.push(p);
+    });
+  }
+  if (c.photo && !allPhotos.includes(c.photo)) {
+    allPhotos.push(c.photo);
+  }
+
+  let currentCursorRow = 54;
+
+  if (allPhotos.length > 0) {
+    for (let index = 0; index < allPhotos.length; index++) {
+      const photoSrc = allPhotos[index];
+      const embeddedImage = await getEmbeddedImageData(photoSrc);
+
+      const startRow = currentCursorRow;
+      const endRow = currentCursorRow + 22; // Height slot spanning 23 rows
+
+      if (embeddedImage) {
+        try {
+          const imgId = wb.addImage({ base64: embeddedImage.base64, extension: embeddedImage.extension });
+          ws.mergeCells(`A${startRow}:K${endRow}`);
+          ws.addImage(imgId, {
+            tl: { col: 0.2, row: startRow - 0.8 } as unknown as ExcelJS.Anchor,
+            br: { col: 11, row: endRow } as unknown as ExcelJS.Anchor,
+            editAs: "oneCell",
+          });
+          ws.getCell(`A${startRow}`).border = border();
+        } catch {
+          setMerged(ws, `A${startRow}:K${endRow}`, `[Photo ${index + 1} could not be embedded]`, {
+            align: "center",
+            vAlign: "middle",
+          });
+        }
+      } else {
+        setMerged(ws, `A${startRow}:K${endRow}`, `Photo ${index + 1} (Source Unreachable)`, {
+          align: "center",
+          vAlign: "middle",
+          size: 12,
+        });
+      }
+
+      for (let r = startRow; r <= endRow; r++) ws.getRow(r).height = 18;
+      currentCursorRow = endRow + 2; // Move past layout gap
     }
   } else {
-    setMerged(ws, "A54:K76", "Photo (none attached)", {
+    const endRow = currentCursorRow + 22;
+    setMerged(ws, `A${currentCursorRow}:K${endRow}`, "Photo (none attached)", {
       align: "center",
       vAlign: "middle",
       size: 12,
     });
+    for (let r = currentCursorRow; r <= endRow; r++) ws.getRow(r).height = 18;
+    currentCursorRow = endRow + 2;
   }
-  for (let r = 54; r <= 76; r++) ws.getRow(r).height = 18;
 
-  setMerged(ws, "A78:K78", "Outcome", {
+  // --- DYNAMICALLY MOVED OUTCOME SECTION ---
+  const outcomeHeaderRow = currentCursorRow;
+  setMerged(ws, `A${outcomeHeaderRow}:K${outcomeHeaderRow}`, "Outcome", {
     bold: true,
     size: 16,
     fill: BLUE,
     align: "center",
     vAlign: "middle",
   });
-  ws.getRow(78).height = 26;
-  setMerged(ws, "A79:K88", c.outcome, {
+  ws.getRow(outcomeHeaderRow).height = 26;
+
+  const outcomeStart = outcomeHeaderRow + 1;
+  const outcomeEnd = outcomeHeaderRow + 10;
+  setMerged(ws, `A${outcomeStart}:K${outcomeEnd}`, c.outcome, {
     bold: true,
     size: 14,
     align: "center",
     vAlign: "middle",
     wrap: true,
   });
-  for (let r = 79; r <= 88; r++) ws.getRow(r).height = 22;
+  for (let r = outcomeStart; r <= outcomeEnd; r++) ws.getRow(r).height = 22;
 
   return wb;
 }
 
+// ... Keep your remaining file exports exactly as they are (createCaseExcelFile, downloadCaseXlsx, shareCaseXlsx, caseSummaryText) ...
 async function createCaseExcelFile(c: CaseRecord): Promise<File> {
   const wb = await buildWorkbook(c);
   const buf = await wb.xlsx.writeBuffer();
@@ -203,7 +280,7 @@ export async function downloadCaseXlsx(c: CaseRecord) {
   return file.name;
 }
 
-export async function shareCaseXlsx(c: CaseRecord, target: "whatsapp" | "email") {
+export async function shareCaseXlsx(c: CaseRecord) {
   const file = await createCaseExcelFile(c);
   const fileUrl = URL.createObjectURL(file);
   const summary = caseSummaryText(c);
@@ -211,34 +288,20 @@ export async function shareCaseXlsx(c: CaseRecord, target: "whatsapp" | "email")
   const shareText = `Case report ready:\n\n${summary}`;
 
   if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-    const shareData = {
-      title: shareTitle,
-      text: shareText,
-      files: [file],
-    };
-
-    if (typeof navigator.canShare === "function" && navigator.canShare(shareData)) {
-      try {
-        await navigator.share(shareData);
+    try {
+      await navigator.share({
+        title: shareTitle,
+        text: shareText,
+        files: [file],
+      });
+      URL.revokeObjectURL(fileUrl);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
         URL.revokeObjectURL(fileUrl);
-        return true;
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          URL.revokeObjectURL(fileUrl);
-          return false;
-        }
+        return false;
       }
     }
-  }
-
-  const encodedSummary = encodeURIComponent(shareText);
-  if (target === "whatsapp") {
-    const whatsappUrl = `https://wa.me/?text=${encodedSummary}`;
-    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
-  } else {
-    const subject = encodeURIComponent(`Case Report ${c.caseId || ""}`);
-    const body = encodedSummary;
-    window.location.href = `mailto:?subject=${subject}&body=${body}`;
   }
 
   setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
